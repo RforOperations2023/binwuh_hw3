@@ -1,0 +1,13 @@
+name: LicensedDriversMap
+title: LicensedDriversMap
+username:
+account: binwuhu
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 8481830
+bundleId: 6918286
+url: https://binwuhu.shinyapps.io/LicensedDriversMap/
+when: 1678041088.24015
+lastSyncTime: 1678041088.24017
+asMultiple: FALSE
+asStatic: FALSE

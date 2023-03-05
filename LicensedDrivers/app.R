@@ -52,7 +52,6 @@ ui <- dashboardPage(
     
     tags$style(HTML(".sidebar { height: calc(100vh - 50px) !important; overflow-y: auto; }")
     ),
-    
     # Inputs: Select variables to plot ------------------------------
     # Select which gender group to display
     radioButtons(inputId = "selected_gender",
@@ -62,6 +61,7 @@ ui <- dashboardPage(
     selectInput(inputId = "selected_region", 
                 label = "Select Region:",
                 choices = c("Mideast", "Midwest","Mountain-Prairie","Northeast","Southeast", "Southwest")),
+    actionButton("addMarker", "Add Marker"),
     
     # Select the Year range
     sliderInput(inputId = "selected_year", 
@@ -129,7 +129,7 @@ server <- function(input, output) {
       addTiles() %>% 
       setView(lng = -98.5795, lat = 39.8283, zoom = 4) })
   
-  observe({
+  observeEvent(input$addMarker, {
     # Filter data based on input values
     # Update markers on map
     leafletProxy("map", data =  region_subset() ) %>%
