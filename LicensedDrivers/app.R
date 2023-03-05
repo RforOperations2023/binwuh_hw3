@@ -127,8 +127,14 @@ server <- function(input, output) {
   output$map <- renderLeaflet({
     leaflet(data = region_subset()) %>% 
       addTiles() %>% 
-      setView(lng = -98.5795, lat = 39.8283, zoom = 4) %>%
-      addMarkers(lng = ~Lon, lat = ~Lat, popup = ~paste("State: ", State, "<br>Year: ", max(Year), "<br>Number of drivers: ",drivers_sum))
+      setView(lng = -98.5795, lat = 39.8283, zoom = 4) })
+  
+  observe({
+    # Filter data based on input values
+    # Update markers on map
+    leafletProxy("map", data =  region_subset() ) %>%
+      clearMarkers() %>%
+      addMarkers(lng = ~Lon, lat = ~Lat, popup = ~paste("State: ", State, "<br>Latest Year: ", max(Year), "<br>Number of drivers: ",drivers_sum))
   })
   
   # Print data table if checked
