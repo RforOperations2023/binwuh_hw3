@@ -14,6 +14,7 @@ library(leaflet.providers)
 data <- read.csv("licensed_drivers.csv")
 states <- sort(unique(data$State))
 # Merge the two data frames based on the "State" column
+state_coor <- read.csv("StateGeo_lon_lat.csv")
 merged <- merge(data, state_coor, by = "State")
 
 # Create the "Lat" and "Lon" columns based on the "Latitude" and "Longitude" columns in the merged data frame
@@ -36,6 +37,7 @@ get_region <- function(state) {
   )
   return(region)
 }
+
 # Apply the function to create a new Region column in data
 data <- data %>% mutate(Region = get_region(State))
 
@@ -52,19 +54,14 @@ ui <- dashboardPage(
     ),
     
     # Inputs: Select variables to plot ------------------------------
-    selectInput(inputId = "selected_state", 
-                label = "Select State:",
-                choices = sort(unique(data$State)),
-                selected = "pennsylvania"),
-    
     # Select which gender group to display
     radioButtons(inputId = "selected_gender",
                  label = "Select Gender:",
                  choices = c("Female", "Male")),
     
-    radioButtons(inputId = "selected_region",
-                 label = "Select Region: ",
-                 choices = c("Mideast", "Midwest","Mountain-Prairie","Northeast","Southeast", "Southwest")),
+    selectInput(inputId = "selected_region", 
+                label = "Select Region:",
+                choices = c("Mideast", "Midwest","Mountain-Prairie","Northeast","Southeast", "Southwest")),
     
     # Select the Year range
     sliderInput(inputId = "selected_year", 
@@ -101,7 +98,6 @@ ui <- dashboardPage(
       id = "tabset1", height = "250px",
       tabPanel("bar Plot", plotlyOutput("barPlot", height = "400px")),
       tabPanel("Line Graph", plotlyOutput("linePlot", height = "400px")),
-      tabPanel("Heat Map", plotlyOutput("heatMap", height = "400px")),
       tabPanel("Map", leafletOutput("map"))),
   
     # Add the data table
@@ -119,24 +115,26 @@ ui <- dashboardPage(
 # Define server function required to create the plots
 server <- function(input, output) {
   # Filter the data based on the inputs
-  drivers_subset <- reactive({ 
-    req(input$selected_gender)
-    filter(data, Gender %in% input$selected_gender, Region %in% input$selected_region,
-           Cohort %in% input$selected_cohort, Year >= input$selected_year[1],
+  region_subset <- reactive({ 
+    filter(data, 
+           Gender %in% input$selected_gender, 
+           Cohort %in% input$selected_cohort, 
+           Region %in% input$selected_region, 
+           Year >= input$selected_year[1],
            Year <= input$selected_year[2])
   })
   
   output$map <- renderLeaflet({
-    leaflet(data = drivers_subset()) %>% 
+    leaflet(data = region_subset()) %>% 
       addTiles() %>% 
       setView(lng = -98.5795, lat = 39.8283, zoom = 4) %>%
-      addMarkers(lng = ~Lon, lat = ~Lat, popup = ~paste("State: ", State, "<br>Year: ", Year, "<br>Number of drivers: ", drivers_sum))
+      addMarkers(lng = ~Lon, lat = ~Lat, popup = ~paste("State: ", State, "<br>Year: ", max(Year), "<br>Number of drivers: ",drivers_sum))
   })
   
   # Print data table if checked
   output$driversTable <- DT::renderDataTable(
     if(input$show_data){
-      DT::datatable(data = drivers_subset(), 
+      DT::datatable(data = region_subset(), 
                     options = list(pageLength = 10), 
                     rownames = FALSE)
     }
@@ -144,10 +142,14 @@ server <- function(input, output) {
   
   
   output$linePlot <- renderPlotly({
-    if (nrow(drivers_subset()) == 0) {
+    if (nrow(region_subset()) == 0) {
       return(NULL)
     }
-    ggplot(data = drivers_subset(),aes(x=Year, y=drivers_sum, group=Gender, color=Cohort)) + 
+    drivers_sum_region <- region_subset() %>% 
+      group_by(Year, Cohort, Region) %>% 
+      summarise(total_drivers_sum = sum(drivers_sum))
+    
+    ggplot(data = drivers_sum_region,aes(x=Year, y=total_drivers_sum, color=Cohort)) + 
       geom_line(aes(group = Cohort)) + 
       labs(title="Line Graph") + 
       theme(plot.title = element_text(hjust = 0.5)) +
@@ -158,10 +160,15 @@ server <- function(input, output) {
   })
   
   output$barPlot <- renderPlotly({
-    if (nrow(drivers_subset()) == 0) {
+    if (nrow(region_subset()) == 0) {
       return(NULL)
     }
-    ggplot(data = drivers_subset(), aes(x = Year, y = drivers_sum, fill = Cohort)) +
+    
+    drivers_sum_region <- region_subset() %>% 
+      group_by(Year, Cohort, Region) %>% 
+      summarise(total_drivers_sum = sum(drivers_sum))
+    
+    ggplot(data = drivers_sum_region, aes(x = Year, y = total_drivers_sum, fill = Cohort)) +
       geom_bar(color = "black",position="stack", stat="identity") + 
       labs(title="Bar Plot") + 
       scale_fill_brewer(palette = "Set3") +
@@ -171,31 +178,19 @@ server <- function(input, output) {
       scale_x_continuous(breaks = seq(1994, 2018, 1))
   })
   
-  output$heatMap <- renderPlotly({
-    if (nrow(drivers_subset()) == 0) {
-      return(NULL)
-    }
-    # Create heatmap plot
-    ggplot(data = drivers_subset(), aes(x = Year, y = Cohort, fill = drivers_sum)) +
-      geom_tile(color = "black") +
-      scale_fill_gradient(low = "white", high = "red") +
-      scale_x_continuous(breaks = seq(min(drivers_subset()$Year), max(drivers_subset()$Year), 1),
-                         labels = as.character(seq(min(drivers_subset()$Year), max(drivers_subset()$Year), 1)))
-  })
-  
   # Download the filtered data
   output$downloadData <- downloadHandler(
     filename = function() {
       paste("filtered_data_", input$selected_region, "_", input$selected_gender, ".csv", sep = "")
     },
     content = function(file) {
-      write.csv(drivers_subset(), file, row.names = FALSE)
+      write.csv(region_subset(), file, row.names = FALSE)
     }
   )
   
   output$total_drivers <- renderValueBox({
     valueBox(
-      paste0(format(sum(drivers_subset()$drivers_sum), big.mark = ",")), 
+      paste0(format(sum(region_subset()$drivers_sum), big.mark = ",")), 
       "Total Drivers", 
       icon = icon("car"), 
       color = "blue"
@@ -207,7 +202,7 @@ server <- function(input, output) {
     selected_year <- input$selected_year
     
     # calculate the AAGR for the selected year
-    data_summed <- drivers_subset() %>% group_by(Year) %>% summarise(drivers_sum = sum(drivers_sum))
+    data_summed <- region_subset() %>% group_by(Year) %>% summarise(drivers_sum = sum(drivers_sum))
     aagr <- (data_summed$drivers_sum[length(data_summed$drivers_sum)] / data_summed$drivers_sum[1])^(1/length(data_summed$drivers_sum)) - 1
     
     # initialize as 0
@@ -227,7 +222,7 @@ server <- function(input, output) {
   output$senior_drivers <- renderValueBox({
     senior_cohort <- c("60-64", "65-69", "70-74", "75-79","80-84","85+")
     valueBox(
-      paste0(format(sum(filter(drivers_subset(), Cohort %in% senior_cohort)$drivers_sum), big.mark = ",")), 
+      paste0(format(sum(filter(region_subset(), Cohort %in% senior_cohort)$drivers_sum), big.mark = ",")), 
       "Senior Drivers(>60 years old)", 
       color = "maroon"
     )
